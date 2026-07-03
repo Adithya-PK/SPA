@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Percent, UploadCloud } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -8,18 +8,12 @@ import { StatCard } from "../components/StatCard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Progress } from "../components/ui/progress";
 import { Badge } from "../components/ui/badge";
-import { fetchAnalysis, fetchUploadStatus, type AnalysisResponse, type UploadContext, type UploadStatusResponse } from "../lib/api";
-import { loadSettings } from "../lib/settings";
+import { useAcademicContext } from "../context/AcademicContext";
+import { fetchAnalysis, fetchContextConfig, fetchUploadStatus, type AnalysisResponse, type AppConfigResponse, type UploadContext, type UploadStatusResponse } from "../lib/api";
 
 export function Dashboard() {
-  const settings = useMemo(() => loadSettings(), []);
-  const [context, setContext] = useState<UploadContext>({
-    academicYear: settings.academicYear,
-    year: settings.year,
-    semester: settings.semester,
-    section: settings.section,
-    exam: "UT 1",
-  });
+  const { context, setContext } = useAcademicContext();
+  const [config, setConfig] = useState<AppConfigResponse>({ ...context, subjects: [], facultyAssignments: [] });
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [uploadStatus, setUploadStatus] = useState<UploadStatusResponse>({ uploads: [], mergedStudentCount: 0, warnings: [] });
   const [loading, setLoading] = useState(true);
@@ -29,21 +23,32 @@ export function Dashboard() {
     let active = true;
     setLoading(true);
 
-    Promise.all([fetchUploadStatus(context), fetchAnalysis(context)])
-      .then(([nextUploadStatus, nextAnalysis]) => {
+    async function loadDashboard() {
+      try {
+        const [nextConfig, nextUploadStatus] = await Promise.all([fetchContextConfig(context), fetchUploadStatus(context)]);
         if (!active) return;
+        setConfig(nextConfig);
         setUploadStatus(nextUploadStatus);
-        setAnalysis(nextAnalysis);
-        setMessage(`Analysis ready for ${nextAnalysis.examType.replace("_", " ")} rules.`);
-      })
-      .catch((error) => {
+        try {
+          const nextAnalysis = await fetchAnalysis(context);
+          if (!active) return;
+          setAnalysis(nextAnalysis);
+          setMessage(`Analysis ready for ${nextAnalysis.examType.replace("_", " ")} rules.`);
+        } catch (error) {
+          if (!active) return;
+          setAnalysis(null);
+          setMessage(error instanceof Error ? error.message : "Upload subject files to generate analysis.");
+        }
+      } catch (error) {
         if (!active) return;
         setAnalysis(null);
-        setMessage(error instanceof Error ? error.message : "Unable to load analysis.");
-      })
-      .finally(() => {
+        setMessage(error instanceof Error ? error.message : "Unable to load dashboard data.");
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    }
+
+    loadDashboard();
 
     return () => {
       active = false;
@@ -52,10 +57,10 @@ export function Dashboard() {
 
   const uploadedCount = uploadStatus.uploads.length;
   const uploadBySubject = new Map(uploadStatus.uploads.map((upload) => [upload.subjectCode.toUpperCase(), upload]));
-  const uploadProgress = settings.subjects.length ? Math.round((uploadedCount / settings.subjects.length) * 100) : 0;
+  const uploadProgress = config.subjects.length ? Math.round((uploadedCount / config.subjects.length) * 100) : 0;
   const uploadData = [
     { name: "Uploaded", value: uploadedCount, color: "hsl(var(--primary))" },
-    { name: "Missing", value: Math.max(settings.subjects.length - uploadedCount, 0), color: "hsl(var(--muted))" },
+    { name: "Missing", value: Math.max(config.subjects.length - uploadedCount, 0), color: "hsl(var(--muted))" },
   ];
   const subjectChartData = analysis?.subjects.map((subject) => ({
     subject: subject.subjectCode,
@@ -80,7 +85,7 @@ export function Dashboard() {
         <StatCard label="Overall Pass %" value={`${analysis?.overall.passPercentage ?? 0}%`} hint="Across uploaded subject entries" icon={Percent} />
         <StatCard label="Students Passed" value={String(allPassCount)} hint="No subject failures" icon={CheckCircle2} />
         <StatCard label="Students Failed" value={String(failedStudentCount)} hint="One or more failures" icon={AlertTriangle} />
-        <StatCard label="Upload Progress" value={`${uploadProgress}%`} hint={`${uploadedCount} of ${settings.subjects.length} subjects`} icon={UploadCloud} />
+        <StatCard label="Upload Progress" value={`${uploadProgress}%`} hint={`${uploadedCount} of ${config.subjects.length} subjects`} icon={UploadCloud} />
       </div>
 
       <Card>
@@ -147,10 +152,10 @@ export function Dashboard() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {settings.subjects.map((subject) => {
+            {config.subjects.map((subject) => {
               const upload = uploadBySubject.get(subject.code.toUpperCase());
               const faculty =
-                settings.facultyAssignments.find((assignment) => assignment.subjectCode.toUpperCase() === subject.code.toUpperCase())
+                config.facultyAssignments.find((assignment) => assignment.subjectCode.toUpperCase() === subject.code.toUpperCase())
                   ?.facultyName ?? "Unassigned";
               return (
                 <div key={subject.code} className="rounded-lg border p-4">

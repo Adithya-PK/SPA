@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 from io import BytesIO
-from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
@@ -18,6 +16,7 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, 
 
 from app.config import STORAGE_DIR
 from app.services.analysis_service import get_analysis
+from app.services.config_service import get_context_config
 from app.services.upload_service import get_upload_status
 
 
@@ -206,8 +205,7 @@ def build_excel_export(*, academic_year: str, year: str, semester: str, section:
 def _load_report_data(*, academic_year: str, year: str, semester: str, section: str, exam: str) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     analysis = get_analysis(academic_year=academic_year, year=year, semester=semester, section=section, exam=exam)
     uploads = get_upload_status(academic_year=academic_year, year=year, semester=semester, section=section, exam=exam)
-    settings_path = STORAGE_DIR / "settings.json"
-    settings = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.exists() else {"subjects": [], "facultyAssignments": []}
+    settings = get_context_config(academic_year, year, semester, section)
     return analysis, uploads, settings
 
 

@@ -6,18 +6,12 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Progress } from "../components/ui/progress";
-import { fetchUploadStatus, uploadSubjectFile, type UploadContext, type UploadStatusResponse } from "../lib/api";
-import { loadSettings } from "../lib/settings";
+import { useAcademicContext } from "../context/AcademicContext";
+import { fetchContextConfig, fetchUploadStatus, uploadSubjectFile, type AppConfigResponse, type UploadContext, type UploadStatusResponse } from "../lib/api";
 
 export function Upload() {
-  const settings = useMemo(() => loadSettings(), []);
-  const [context, setContext] = useState<UploadContext>({
-    academicYear: settings.academicYear,
-    year: settings.year,
-    semester: settings.semester,
-    section: settings.section,
-    exam: "UT 1",
-  });
+  const { context, setContext } = useAcademicContext();
+  const [config, setConfig] = useState<AppConfigResponse>({ ...context, subjects: [], facultyAssignments: [] });
   const [status, setStatus] = useState<UploadStatusResponse>({ uploads: [], mergedStudentCount: 0, warnings: [] });
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [uploadingSubject, setUploadingSubject] = useState<string | null>(null);
@@ -27,9 +21,11 @@ export function Upload() {
   useEffect(() => {
     let active = true;
     setLoadingStatus(true);
-    fetchUploadStatus(context)
-      .then((nextStatus) => {
-        if (active) setStatus(nextStatus);
+    Promise.all([fetchContextConfig(context), fetchUploadStatus(context)])
+      .then(([nextConfig, nextStatus]) => {
+        if (!active) return;
+        setConfig(nextConfig);
+        setStatus(nextStatus);
       })
       .catch((error) => {
         if (active) setMessage(error.message);
@@ -47,10 +43,10 @@ export function Upload() {
     () => new Map(status.uploads.map((upload) => [upload.subjectCode.toUpperCase(), upload])),
     [status.uploads],
   );
-  const subjects = settings.subjects.map((subject) => ({
+  const subjects = config.subjects.map((subject) => ({
     ...subject,
     faculty:
-      settings.facultyAssignments.find((assignment) => assignment.subjectCode.toUpperCase() === subject.code.toUpperCase())
+      config.facultyAssignments.find((assignment) => assignment.subjectCode.toUpperCase() === subject.code.toUpperCase())
         ?.facultyName ?? "Unassigned",
     upload: uploadsBySubject.get(subject.code.toUpperCase()),
   }));

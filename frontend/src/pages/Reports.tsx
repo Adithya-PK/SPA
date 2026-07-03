@@ -8,25 +8,19 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
-import { downloadExport, fetchAnalysis, fetchUploadStatus, type AnalysisResponse, type UploadContext, type UploadStatusResponse } from "../lib/api";
-import { loadSettings } from "../lib/settings";
+import { useAcademicContext } from "../context/AcademicContext";
+import { downloadExport, fetchAnalysis, fetchContextConfig, fetchUploadStatus, type AnalysisResponse, type AppConfigResponse, type UploadContext, type UploadStatusResponse } from "../lib/api";
 
 const tabs = ["Report 1", "Report 2", "Report 3"];
 const chartColors = ["#0f766e", "#eab308", "#2563eb", "#dc2626", "#7c3aed", "#475569"];
 
 export function Reports() {
-  const settings = useMemo(() => loadSettings(), []);
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(searchParams.get("tab") ?? tabs[0]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [selectedSubject, setSelectedSubject] = useState<string | null>(searchParams.get("subject"));
-  const [context, setContext] = useState<UploadContext>({
-    academicYear: settings.academicYear,
-    year: settings.year,
-    semester: settings.semester,
-    section: settings.section,
-    exam: "UT 1",
-  });
+  const { context, setContext } = useAcademicContext();
+  const [config, setConfig] = useState<AppConfigResponse>({ ...context, subjects: [], facultyAssignments: [] });
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [uploadStatus, setUploadStatus] = useState<UploadStatusResponse>({ uploads: [], mergedStudentCount: 0, warnings: [] });
   const [loading, setLoading] = useState(true);
@@ -36,30 +30,41 @@ export function Reports() {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    Promise.all([fetchUploadStatus(context), fetchAnalysis(context)])
-      .then(([nextUploadStatus, nextAnalysis]) => {
+
+    async function loadReports() {
+      try {
+        const [nextConfig, nextUploadStatus] = await Promise.all([fetchContextConfig(context), fetchUploadStatus(context)]);
         if (!active) return;
+        setConfig(nextConfig);
         setUploadStatus(nextUploadStatus);
-        setAnalysis(nextAnalysis);
-        setSelectedSubject((current) => current ?? searchParams.get("subject") ?? nextAnalysis.subjects[0]?.subjectCode ?? null);
-        setMessage(`Live reports generated from ${nextAnalysis.examType.replace("_", " ")} analysis.`);
-      })
-      .catch((error) => {
+        try {
+          const nextAnalysis = await fetchAnalysis(context);
+          if (!active) return;
+          setAnalysis(nextAnalysis);
+          setSelectedSubject((current) => current ?? searchParams.get("subject") ?? nextAnalysis.subjects[0]?.subjectCode ?? null);
+          setMessage(`Live reports generated from ${nextAnalysis.examType.replace("_", " ")} analysis.`);
+        } catch (error) {
+          if (!active) return;
+          setAnalysis(null);
+          setMessage(error instanceof Error ? error.message : "Upload subject files to view reports.");
+        }
+      } catch (error) {
         if (!active) return;
         setAnalysis(null);
-        setUploadStatus({ uploads: [], mergedStudentCount: 0, warnings: [] });
         setMessage(error instanceof Error ? error.message : "Unable to load reports.");
-      })
-      .finally(() => {
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    }
+
+    loadReports();
 
     return () => {
       active = false;
     };
   }, [context, searchParams]);
 
-  const rows = useMemo(() => buildSubjectRows(analysis, uploadStatus, settings), [analysis, uploadStatus, settings]);
+  const rows = useMemo(() => buildSubjectRows(analysis, uploadStatus, config), [analysis, uploadStatus, config]);
   const selectedRow = rows.find((row) => row.subjectCode === selectedSubject) ?? rows[0];
 
   async function handleExport(type: "pdf" | "excel") {
@@ -521,7 +526,7 @@ function MarksTable({ row }: { row: SubjectReportRow }) {
 function buildSubjectRows(
   analysis: AnalysisResponse | null,
   uploadStatus: UploadStatusResponse,
-  settings: ReturnType<typeof loadSettings>,
+  settings: AppConfigResponse,
 ): SubjectReportRow[] {
   if (!analysis) return [];
 

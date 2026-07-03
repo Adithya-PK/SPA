@@ -1,4 +1,4 @@
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000/api";
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8001/api";
 
 export type UploadContext = {
   academicYear: string;
@@ -6,6 +6,25 @@ export type UploadContext = {
   semester: string;
   section: string;
   exam: string;
+};
+
+export type SubjectConfig = {
+  code: string;
+  name: string;
+};
+
+export type FacultyAssignmentConfig = {
+  subjectCode: string;
+  facultyName: string;
+};
+
+export type AppConfigResponse = {
+  academicYear: string;
+  year: string;
+  semester: string;
+  section: string;
+  subjects: SubjectConfig[];
+  facultyAssignments: FacultyAssignmentConfig[];
 };
 
 export type UploadedSubject = {
@@ -80,6 +99,52 @@ export async function fetchUploadStatus(context: UploadContext): Promise<UploadS
   const response = await fetch(`${apiBaseUrl}/uploads/status?${toQuery(context)}`);
   if (!response.ok) {
     throw new Error("Unable to load upload status.");
+  }
+  return response.json();
+}
+
+export async function fetchContextConfig(context: Pick<UploadContext, "academicYear" | "year" | "semester" | "section">): Promise<AppConfigResponse> {
+  const response = await fetch(`${apiBaseUrl}/config/context?${toConfigQuery(context)}`);
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(formatApiError(payload?.detail, "Unable to load configuration."));
+  }
+  return response.json();
+}
+
+export async function saveSubjectConfig({
+  academicYear,
+  year,
+  semester,
+  subjects,
+}: Pick<UploadContext, "academicYear" | "year" | "semester"> & { subjects: SubjectConfig[] }) {
+  const response = await fetch(`${apiBaseUrl}/config/subjects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ academicYear, year, semester, subjects }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(formatApiError(payload?.detail, "Unable to save subjects."));
+  }
+  return response.json();
+}
+
+export async function saveFacultyConfig({
+  academicYear,
+  year,
+  semester,
+  section,
+  facultyAssignments,
+}: Pick<UploadContext, "academicYear" | "year" | "semester" | "section"> & { facultyAssignments: FacultyAssignmentConfig[] }) {
+  const response = await fetch(`${apiBaseUrl}/config/faculty`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ academicYear, year, semester, section, facultyAssignments }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(formatApiError(payload?.detail, "Unable to save faculty assignments."));
   }
   return response.json();
 }
@@ -159,4 +224,19 @@ function toQuery(context: UploadContext) {
     section: context.section,
     exam: context.exam,
   }).toString();
+}
+
+function toConfigQuery(context: Pick<UploadContext, "academicYear" | "year" | "semester" | "section">) {
+  return new URLSearchParams({
+    academic_year: context.academicYear,
+    year: context.year,
+    semester: context.semester,
+    section: context.section,
+  }).toString();
+}
+
+function formatApiError(detail: unknown, fallback: string) {
+  if (Array.isArray(detail)) return detail.join(" ");
+  if (typeof detail === "string") return detail;
+  return fallback;
 }

@@ -8,4 +8,5 @@ __pycache__/
 .venv/
 backend/app/storage/uploads/
 backend/app/storage/processed/
+backend/data/
 tmp/
