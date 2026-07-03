@@ -7,6 +7,7 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Progress } from "../components/ui/progress";
 import { useAcademicContext } from "../context/AcademicContext";
+import { subjectLabel } from "../lib/academic";
 import { fetchContextConfig, fetchUploadStatus, uploadSubjectFile, type AppConfigResponse, type UploadContext, type UploadStatusResponse } from "../lib/api";
 
 export function Upload() {
@@ -124,8 +125,8 @@ export function Upload() {
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <CardTitle>{subject.code}</CardTitle>
-                  <CardDescription>{subject.name}</CardDescription>
+                  <CardTitle>{subjectLabel(subject.code, subject.name)}</CardTitle>
+                  <CardDescription>{subject.faculty}</CardDescription>
                 </div>
                 <Badge variant={subject.upload ? "success" : "muted"}>
                   {subject.upload ? "Uploaded" : "Missing"}
@@ -134,8 +135,8 @@ export function Upload() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1 text-sm">
-                <p className="text-muted-foreground">Faculty</p>
-                <p className="font-medium">{subject.faculty}</p>
+                <p className="text-muted-foreground">Subject</p>
+                <p className="font-medium">{subjectLabel(subject.code, subject.name)}</p>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 {subject.upload ? (

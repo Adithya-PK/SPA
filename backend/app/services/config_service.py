@@ -13,7 +13,7 @@ DEFAULT_SUBJECTS = [
     {"code": "231CSE918T", "name": "AI for Edge Computing (PE - IV)"},
     {"code": "231CSE914T", "name": "Large Language Models (PE V)"},
     {"code": "231CSE913T", "name": "Recommender Systems (PE VI)"},
-    {"code": "231BMO901T", "name": "Health Informatics (OE)"},
+    {"code": "231IBM0901T", "name": "Health Informatics (OE)"},
 ]
 
 DEFAULT_FACULTY = [
@@ -22,7 +22,7 @@ DEFAULT_FACULTY = [
     {"subjectCode": "231CSE918T", "facultyName": "Dr. T. Kalaiselvi"},
     {"subjectCode": "231CSE914T", "facultyName": "Dr. R. Meena"},
     {"subjectCode": "231CSE913T", "facultyName": "Dr. V. Vidhya"},
-    {"subjectCode": "231BMO901T", "facultyName": "Mrs. J. Febina"},
+    {"subjectCode": "231IBM0901T", "facultyName": "Mrs. J. Febina"},
 ]
 
 
@@ -36,8 +36,10 @@ def get_context_config(academic_year: str, year: str, semester: str, section: st
     if not section_path.exists():
         _write_json(section_path, {"facultyAssignments": DEFAULT_FACULTY})
 
-    subjects = _read_json(subjects_path).get("subjects", [])
-    faculty_assignments = _read_json(section_path).get("facultyAssignments", [])
+    subjects = [_normalize_subject(subject) for subject in _read_json(subjects_path).get("subjects", [])]
+    faculty_assignments = [_normalize_faculty(assignment) for assignment in _read_json(section_path).get("facultyAssignments", [])]
+    _write_json(subjects_path, {"subjects": subjects})
+    _write_json(section_path, {"facultyAssignments": faculty_assignments})
     return {
         "academicYear": academic_year,
         "year": year,
@@ -99,6 +101,18 @@ def _validate_subjects(subjects: list[dict[str, str]]) -> None:
         errors.append(f"Duplicate Subject Code found: {', '.join(duplicates)}.")
     if errors:
         raise HTTPException(status_code=400, detail=errors)
+
+
+def _normalize_subject(subject: dict[str, str]) -> dict[str, str]:
+    if subject.get("code", "").strip().upper() == "231BMO901T":
+        return {**subject, "code": "231IBM0901T"}
+    return subject
+
+
+def _normalize_faculty(assignment: dict[str, str]) -> dict[str, str]:
+    if assignment.get("subjectCode", "").strip().upper() == "231BMO901T":
+        return {**assignment, "subjectCode": "231IBM0901T"}
+    return assignment
 
 
 def _context_dir(academic_year: str, year: str, semester: str) -> Path:

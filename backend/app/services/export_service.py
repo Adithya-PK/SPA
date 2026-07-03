@@ -231,7 +231,7 @@ def _subject_rows(analysis: dict[str, Any], uploads: dict[str, Any], settings: d
         rows.append(
             {
                 "faculty": faculty_by_code.get(code.upper(), {}).get("facultyName") or upload_by_code.get(code.upper(), {}).get("facultyName", "Unassigned"),
-                "subject": subject_by_code.get(code.upper(), {}).get("name") or upload_by_code.get(code.upper(), {}).get("subjectName", code),
+                "subject": f"{code} - {subject_by_code.get(code.upper(), {}).get('name') or upload_by_code.get(code.upper(), {}).get('subjectName', code)}",
                 "subjectCode": code,
                 "strength": subject["classStrength"],
                 "attended": subject["studentsAttended"],

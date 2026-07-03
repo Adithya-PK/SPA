@@ -9,6 +9,7 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { useAcademicContext } from "../context/AcademicContext";
+import { subjectLabel } from "../lib/academic";
 import { downloadExport, fetchAnalysis, fetchContextConfig, fetchUploadStatus, type AnalysisResponse, type AppConfigResponse, type UploadContext, type UploadStatusResponse } from "../lib/api";
 
 const tabs = ["Report 1", "Report 2", "Report 3"];
@@ -151,7 +152,7 @@ function ReportOne({
   analysis: AnalysisResponse | null;
 }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+    <div className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>Faculty Subject Summary</CardTitle>
@@ -170,9 +171,9 @@ function ReportOne({
         <CardContent>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={analysis?.subjects ?? []}>
+              <BarChart data={rows.map((row) => ({ ...row, subjectLabel: row.subject }))}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="subjectCode" />
+                <XAxis dataKey="subjectLabel" />
                 <YAxis />
                 <Tooltip />
                 <Bar dataKey="passPercentage" name="Pass %" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
@@ -200,34 +201,13 @@ function ReportTwo({
   const overallPass = totalStudents ? Math.round((allPass / totalStudents) * 10000) / 100 : 0;
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+    <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Failure Distribution</CardTitle>
-          <CardDescription>Students grouped by number of failed subjects.</CardDescription>
+          <CardTitle>Failure Distribution Summary</CardTitle>
+          <CardDescription>Section-level failure distribution.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={distribution} dataKey="count" nameKey="label" outerRadius={104}>
-                  {distribution.map((entry, index) => (
-                    <Cell key={entry.label} fill={chartColors[index % chartColors.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Distribution Categories</CardTitle>
-          <CardDescription>Section-level distribution with expandable categories.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="border-b text-xs uppercase text-muted-foreground">
@@ -256,6 +236,36 @@ function ReportTwo({
               </tbody>
             </table>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Failure Distribution Chart</CardTitle>
+          <CardDescription>Students grouped by number of failed subjects.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={distribution} dataKey="count" nameKey="label" outerRadius={104}>
+                  {distribution.map((entry, index) => (
+                    <Cell key={entry.label} fill={chartColors[index % chartColors.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Distribution Categories</CardTitle>
+          <CardDescription>Expandable student lists.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
           {distribution.map((item) => {
             const students = studentsForDistribution(analysis, item.label);
             const isOpen = expanded === item.label;
@@ -298,38 +308,36 @@ function ReportThree({
 }) {
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Subject Analysis</CardTitle>
-            <CardDescription>Selected subject summary.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <SubjectSummaryTable rows={selectedRow ? [selectedRow] : []} expanded={null} onToggle={() => undefined} compact />
-          </CardContent>
-        </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Subject Analysis</CardTitle>
+          <CardDescription>Selected subject summary.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SubjectSummaryTable rows={selectedRow ? [selectedRow] : []} expanded={null} onToggle={() => undefined} compact />
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Subject Pass vs Fail</CardTitle>
-            <CardDescription>Pass and fail counts by subject.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={analysis?.subjects ?? []}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="subjectCode" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="studentsPassed" name="Passed" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="studentsFailed" name="Failed" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Subject Pass vs Fail</CardTitle>
+          <CardDescription>Pass and fail counts by subject.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={rows.map((row) => ({ ...row, subjectLabel: row.subject }))}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="subjectLabel" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="passed" name="Passed" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="failed" name="Failed" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -549,7 +557,7 @@ function buildSubjectRows(
 
     return {
       faculty: assignment?.facultyName || upload?.facultyName || "Unassigned",
-      subject: configuredSubject?.name || upload?.subjectName || subject.subjectCode,
+      subject: subjectLabel(subject.subjectCode, configuredSubject?.name || upload?.subjectName || subject.subjectCode),
       subjectCode: subject.subjectCode,
       strength: subject.classStrength,
       attended: subject.studentsAttended,

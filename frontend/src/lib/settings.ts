@@ -28,7 +28,7 @@ export const defaultSettings: AppSettings = {
     { code: "231CSE918T", name: "AI for Edge Computing (PE - IV)" },
     { code: "231CSE914T", name: "Large Language Models (PE V)" },
     { code: "231CSE913T", name: "Recommender Systems (PE VI)" },
-    { code: "231BMO901T", name: "Health Informatics (OE)" },
+    { code: "231IBM0901T", name: "Health Informatics (OE)" },
   ],
   facultyAssignments: [
     { subjectCode: "231ADC601T", facultyName: "Dr.K.P.Revathi" },
@@ -36,23 +36,6 @@ export const defaultSettings: AppSettings = {
     { subjectCode: "231CSE918T", facultyName: "Dr. T. Kalaiselvi" },
     { subjectCode: "231CSE914T", facultyName: "Dr. R. Meena" },
     { subjectCode: "231CSE913T", facultyName: "Dr. V. Vidhya" },
-    { subjectCode: "231BMO901T", facultyName: "Mrs. J. Febina" },
+    { subjectCode: "231IBM0901T", facultyName: "Mrs. J. Febina" },
   ],
 };
-
-const settingsKey = "spa.settings.v1";
-
-export function loadSettings(): AppSettings {
-  const stored = window.localStorage.getItem(settingsKey);
-  if (!stored) return defaultSettings;
-
-  try {
-    return { ...defaultSettings, ...JSON.parse(stored) };
-  } catch {
-    return defaultSettings;
-  }
-}
-
-export function saveSettings(settings: AppSettings) {
-  window.localStorage.setItem(settingsKey, JSON.stringify(settings, null, 2));
-}

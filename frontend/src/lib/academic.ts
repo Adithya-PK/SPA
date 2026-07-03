@@ -23,3 +23,8 @@ export function validSemesterForYear(year: string, semester: string) {
 export function exportExamName(exam: string) {
   return exam.replace(/\s+/g, "");
 }
+
+export function subjectLabel(code: string, name: string) {
+  if (!name || name.trim().toUpperCase() === code.trim().toUpperCase()) return code;
+  return `${code} - ${name}`;
+}

@@ -26,6 +26,7 @@ export function Settings() {
   const [errors, setErrors] = useState<string[]>([]);
 
   const semesters = semestersByYear[year] ?? semestersByYear.III;
+  const configuredSubjects = subjects.filter((subject) => subject.code.trim() && subject.name.trim());
 
   useEffect(() => {
     let active = true;
@@ -75,14 +76,16 @@ export function Settings() {
   }
 
   async function handleSaveFaculty() {
-    const validationErrors = validateFaculty(subjects, facultyAssignments);
+    const facultyRows = syncFacultyRows(configuredSubjects, facultyAssignments);
+    const validationErrors = validateFaculty(configuredSubjects, facultyRows);
     if (validationErrors.length) {
       setErrors(validationErrors);
       return;
     }
     setLoading(true);
     try {
-      await saveFacultyConfig({ academicYear, year, semester, section, facultyAssignments });
+      await saveFacultyConfig({ academicYear, year, semester, section, facultyAssignments: facultyRows });
+      setFacultyAssignments(facultyRows);
       setErrors([]);
       setMessage(`Faculty assignments saved for Section ${section}.`);
     } catch (error) {
@@ -163,7 +166,7 @@ export function Settings() {
               <CardDescription>Only Faculty is editable here. Change Section above to configure A, B, C, or D.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {subjects.map((subject) => {
+              {configuredSubjects.map((subject) => {
                 const assignment = facultyAssignments.find((item) => item.subjectCode.toUpperCase() === subject.code.toUpperCase());
                 return (
                   <div key={subject.code || subject.name} className="grid gap-3 rounded-lg border p-3 md:grid-cols-[0.75fr_1.15fr_1fr]">
@@ -174,7 +177,7 @@ export function Settings() {
                       placeholder="Faculty Name"
                       onChange={(event) => {
                         setFacultyAssignments((current) =>
-                          syncFacultyRows(subjects, current).map((item) =>
+                          syncFacultyRows(configuredSubjects, current).map((item) =>
                             item.subjectCode.toUpperCase() === subject.code.toUpperCase()
                               ? { ...item, facultyName: event.target.value }
                               : item,
@@ -185,7 +188,12 @@ export function Settings() {
                   </div>
                 );
               })}
-              <Button type="button" onClick={handleSaveFaculty} disabled={loading}>
+              {!configuredSubjects.length ? (
+                <p className="rounded-md border bg-muted p-3 text-sm text-muted-foreground">
+                  Save configured subjects first. Faculty rows are shown only for saved subject code/name pairs.
+                </p>
+              ) : null}
+              <Button type="button" onClick={handleSaveFaculty} disabled={loading || !configuredSubjects.length}>
                 <Save className="h-4 w-4" />
                 Save Section Faculty
               </Button>

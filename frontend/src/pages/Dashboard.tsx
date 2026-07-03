@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Progress } from "../components/ui/progress";
 import { Badge } from "../components/ui/badge";
 import { useAcademicContext } from "../context/AcademicContext";
+import { subjectLabel } from "../lib/academic";
 import { fetchAnalysis, fetchContextConfig, fetchUploadStatus, type AnalysisResponse, type AppConfigResponse, type UploadContext, type UploadStatusResponse } from "../lib/api";
 
 export function Dashboard() {
@@ -63,7 +64,10 @@ export function Dashboard() {
     { name: "Missing", value: Math.max(config.subjects.length - uploadedCount, 0), color: "hsl(var(--muted))" },
   ];
   const subjectChartData = analysis?.subjects.map((subject) => ({
-    subject: subject.subjectCode,
+    subject: subjectLabel(
+      subject.subjectCode,
+      config.subjects.find((item) => item.code.toUpperCase() === subject.subjectCode.toUpperCase())?.name ?? subject.subjectCode,
+    ),
     average: subject.averageMarks ?? 0,
     passRate: subject.passPercentage,
   })) ?? [];
@@ -161,8 +165,8 @@ export function Dashboard() {
                 <div key={subject.code} className="rounded-lg border p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-medium">{subject.name}</p>
-                      <p className="text-xs text-muted-foreground">{subject.code}</p>
+                      <p className="font-medium">{subjectLabel(subject.code, subject.name)}</p>
+                      <p className="text-xs text-muted-foreground">{faculty}</p>
                     </div>
                     <Badge variant={upload ? "success" : "muted"}>{upload ? "Uploaded" : "Missing"}</Badge>
                   </div>
@@ -207,7 +211,12 @@ export function Dashboard() {
                 <tbody>
                   {analysis?.subjects.map((subject) => (
                     <tr key={subject.subjectCode} className="border-b last:border-0">
-                      <td className="py-3 pr-4 font-medium">{subject.subjectCode}</td>
+                      <td className="py-3 pr-4 font-medium">
+                        {subjectLabel(
+                          subject.subjectCode,
+                          config.subjects.find((item) => item.code.toUpperCase() === subject.subjectCode.toUpperCase())?.name ?? subject.subjectCode,
+                        )}
+                      </td>
                       <td className="py-3 pr-4">{subject.classStrength}</td>
                       <td className="py-3 pr-4">{subject.studentsAttended}</td>
                       <td className="py-3 pr-4">{subject.studentsAbsent}</td>
