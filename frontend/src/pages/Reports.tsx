@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { FileSpreadsheet, FileText } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ContextFilters } from "../components/filters/ContextFilters";
 import { PageLayout } from "../components/layout/PageLayout";
 import { Badge } from "../components/ui/badge";
@@ -31,13 +31,34 @@ export function Reports() {
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setConfig({ ...context, subjects: [], facultyAssignments: [] });
+    setUploadStatus({ uploads: [], mergedStudentCount: 0, warnings: [] });
+    setAnalysis(null);
+    setSelectedSubject(null);
 
     async function loadReports() {
       try {
-        const [nextConfig, nextUploadStatus] = await Promise.all([fetchContextConfig(context), fetchUploadStatus(context)]);
+        const nextConfig = await fetchContextConfig(context);
         if (!active) return;
         setConfig(nextConfig);
+
+        if (!nextConfig.subjects.length) {
+          setUploadStatus({ uploads: [], mergedStudentCount: 0, warnings: [] });
+          setAnalysis(null);
+          setMessage("No reports available because this semester has no configured subjects.");
+          return;
+        }
+
+        const nextUploadStatus = filterUploadStatus(await fetchUploadStatus(context), nextConfig);
+        if (!active) return;
         setUploadStatus(nextUploadStatus);
+
+        if (!nextConfig.facultyAssignments.length) {
+          setAnalysis(null);
+          setMessage("No reports available because this section has no faculty assignments.");
+          return;
+        }
+
         try {
           const nextAnalysis = await fetchAnalysis(context);
           if (!active) return;
@@ -68,6 +89,13 @@ export function Reports() {
   const rows = useMemo(() => buildSubjectRows(analysis, uploadStatus, config), [analysis, uploadStatus, config]);
   const selectedRow = rows.find((row) => row.subjectCode === selectedSubject) ?? rows[0];
 
+  useEffect(() => {
+    if (!rows.length) return;
+    if (!selectedSubject || !rows.some((row) => row.subjectCode === selectedSubject)) {
+      setSelectedSubject(rows[0].subjectCode);
+    }
+  }, [rows, selectedSubject]);
+
   async function handleExport(type: "pdf" | "excel") {
     setExporting(type);
     setMessage(`Preparing ${type === "pdf" ? "PDF" : "Excel"} export...`);
@@ -85,15 +113,19 @@ export function Reports() {
     <PageLayout title="Reports" description="Live examination reports generated from the reusable analysis engine.">
       <ContextFilters value={context} onChange={setContext} />
 
+      {activeTab === "Report 3" && rows.length ? (
+        <SubjectNavigation rows={rows} selectedSubject={selectedRow?.subjectCode ?? selectedSubject} onSelectSubject={setSelectedSubject} />
+      ) : null}
+
       <Card>
         <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-muted-foreground">{loading ? "Loading live report data..." : message}</p>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" disabled={!analysis || Boolean(exporting)} onClick={() => handleExport("pdf")}>
+            <Button type="button" variant="outline" disabled={!analysis || !config.subjects.length || Boolean(exporting)} onClick={() => handleExport("pdf")}>
               <FileText className="h-4 w-4" />
               {exporting === "pdf" ? "Preparing..." : "PDF Export"}
             </Button>
-            <Button type="button" variant="outline" disabled={!analysis || Boolean(exporting)} onClick={() => handleExport("excel")}>
+            <Button type="button" variant="outline" disabled={!analysis || !config.subjects.length || Boolean(exporting)} onClick={() => handleExport("excel")}>
               <FileSpreadsheet className="h-4 w-4" />
               {exporting === "excel" ? "Preparing..." : "Excel Export"}
             </Button>
@@ -104,7 +136,9 @@ export function Reports() {
       {!analysis && !loading ? (
         <Card>
           <CardContent className="p-8 text-center text-sm text-muted-foreground">
-            No report data is available for this selection. Upload subject files for the selected exam to continue.
+            {config.subjects.length
+              ? "No report data is available for this selection. Upload subject files for the selected exam to continue."
+              : "No reports available because this semester has no configured subjects."}
           </CardContent>
         </Card>
       ) : null}
@@ -128,15 +162,42 @@ export function Reports() {
 
         {activeTab === "Report 3" ? (
           <ReportThree
-            rows={rows}
             selectedRow={selectedRow}
-            selectedSubject={selectedSubject}
-            onSelectSubject={setSelectedSubject}
-            analysis={analysis}
           />
         ) : null}
       </Tabs> : null}
     </PageLayout>
+  );
+}
+
+function SubjectNavigation({
+  rows,
+  selectedSubject,
+  onSelectSubject,
+}: {
+  rows: SubjectReportRow[];
+  selectedSubject: string | null | undefined;
+  onSelectSubject: (value: string) => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-3">
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {rows.map((row) => (
+            <Button
+              key={row.subjectCode}
+              type="button"
+              variant={selectedSubject === row.subjectCode ? "default" : "outline"}
+              size="sm"
+              className="shrink-0"
+              onClick={() => onSelectSubject(row.subjectCode)}
+            >
+              {row.subjectName}
+            </Button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -163,25 +224,41 @@ function ReportOne({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Pass Percentage</CardTitle>
-          <CardDescription>Subject-wise pass percentage.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rows.map((row) => ({ ...row, subjectLabel: row.subject }))}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="subjectLabel" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="passPercentage" name="Pass %" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 xl:grid-cols-3">
+        <ReportChartCard title="Subject Pass %" description="Subject-wise pass percentage.">
+          <BarChart data={rows.map((row) => ({ ...row, subjectLabel: row.subjectName }))}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="subjectLabel" tick={{ fontSize: 11 }} interval={0} />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="passPercentage" name="Pass %" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ReportChartCard>
+
+        <ReportChartCard title="Attendance" description="Attended and absent students by subject.">
+          <BarChart data={rows.map((row) => ({ ...row, subjectLabel: row.subjectName }))}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="subjectLabel" tick={{ fontSize: 11 }} interval={0} />
+            <YAxis allowDecimals={false} />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="attended" name="Attended" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="absent" name="Absent" fill="hsl(var(--secondary))" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ReportChartCard>
+
+        <ReportChartCard title="Average Marks" description="Average marks from uploaded subject data.">
+          <BarChart data={rows.map((row) => ({ ...row, subjectLabel: row.subjectName }))}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="subjectLabel" tick={{ fontSize: 11 }} interval={0} />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="averageMarks" name="Average" fill="#2563eb" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ReportChartCard>
+      </div>
     </div>
   );
 }
@@ -239,26 +316,44 @@ function ReportTwo({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Failure Distribution Chart</CardTitle>
-          <CardDescription>Students grouped by number of failed subjects.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={distribution} dataKey="count" nameKey="label" outerRadius={104}>
-                  {distribution.map((entry, index) => (
-                    <Cell key={entry.label} fill={chartColors[index % chartColors.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <ReportChartCard title="Failure Distribution" description="Students grouped by number of failed subjects.">
+          <PieChart>
+            <Pie data={distribution} dataKey="count" nameKey="label" outerRadius={104}>
+              {distribution.map((entry, index) => (
+                <Cell key={entry.label} fill={chartColors[index % chartColors.length]} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ReportChartCard>
+
+        <ReportChartCard title="Overall Pass vs Fail" description="All-pass students compared with students having failures.">
+          <PieChart>
+            <Pie
+              data={[
+                { name: "All Pass", value: allPass, color: "hsl(var(--accent))" },
+                { name: "Failed", value: Math.max(totalStudents - allPass, 0), color: "hsl(var(--destructive))" },
+              ]}
+              dataKey="value"
+              nameKey="name"
+              innerRadius={70}
+              outerRadius={104}
+              paddingAngle={4}
+            >
+              {[
+                { name: "All Pass", color: "hsl(var(--accent))" },
+                { name: "Failed", color: "hsl(var(--destructive))" },
+              ].map((entry) => (
+                <Cell key={entry.name} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ReportChartCard>
+      </div>
 
       <Card>
         <CardHeader>
@@ -293,19 +388,28 @@ function ReportTwo({
   );
 }
 
-function ReportThree({
-  rows,
-  selectedRow,
-  selectedSubject,
-  onSelectSubject,
-  analysis,
-}: {
-  rows: SubjectReportRow[];
-  selectedRow: SubjectReportRow | undefined;
-  selectedSubject: string | null;
-  onSelectSubject: (value: string) => void;
-  analysis: AnalysisResponse | null;
-}) {
+function ReportThree({ selectedRow }: { selectedRow: SubjectReportRow | undefined }) {
+  const selectedChartRows = selectedRow
+    ? [
+        { name: "Passed", value: selectedRow.passed, color: "hsl(var(--accent))" },
+        { name: "Failed", value: selectedRow.failed, color: "hsl(var(--destructive))" },
+      ]
+    : [];
+  const attendanceRows = selectedRow
+    ? [
+        { name: "Attended", value: selectedRow.attended, color: "hsl(var(--primary))" },
+        { name: "Absent", value: selectedRow.absent, color: "hsl(var(--secondary))" },
+      ]
+    : [];
+  const resultRows = selectedRow
+    ? [
+        { name: "Pass", value: selectedRow.passed },
+        { name: "Fail", value: selectedRow.failed },
+        { name: "Absent", value: selectedRow.absent },
+        { name: "Borderline", value: selectedRow.borderlineStudents.length },
+      ]
+    : [];
+
   return (
     <div className="space-y-4">
       <Card>
@@ -318,70 +422,103 @@ function ReportThree({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Subject Pass vs Fail</CardTitle>
-          <CardDescription>Pass and fail counts by subject.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rows.map((row) => ({ ...row, subjectLabel: row.subject }))}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="subjectLabel" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="passed" name="Passed" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="failed" name="Failed" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 xl:grid-cols-4">
+        <ReportChartCard title="Pass vs Fail" description="Selected subject result split.">
+          <PieChart>
+            <Pie data={selectedChartRows} dataKey="value" nameKey="name" innerRadius={64} outerRadius={96} paddingAngle={4}>
+              {selectedChartRows.map((entry) => (
+                <Cell key={entry.name} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ReportChartCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Subject Details</CardTitle>
-          <CardDescription>Failed students, absentees, borderline students, and marks table.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {rows.map((row) => (
-              <Button
-                key={row.subjectCode}
-                type="button"
-                variant={selectedSubject === row.subjectCode ? "default" : "outline"}
-                size="sm"
-                onClick={() => onSelectSubject(row.subjectCode)}
-              >
-                {row.subjectCode}
-              </Button>
-            ))}
-          </div>
+        <ReportChartCard title="Marks Distribution" description="Selected subject result categories.">
+          <BarChart data={resultRows}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="name" />
+            <YAxis allowDecimals={false} />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="value" name="Students" fill="#2563eb" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ReportChartCard>
 
-          {selectedRow ? (
-            <div className="grid gap-4 xl:grid-cols-3">
-              <DetailPanel title="Failed Students">
-                <StudentList students={selectedRow.failedStudents} emptyText="No failed students." showSubject={false} />
-              </DetailPanel>
-              <DetailPanel title="Absent Students">
-                <StudentList students={selectedRow.absentStudents} emptyText="No absent students." showSubject={false} />
-              </DetailPanel>
-              <DetailPanel title="Borderline Students">
-                <StudentList students={selectedRow.borderlineStudents} emptyText="No borderline students." showSubject={false} />
-              </DetailPanel>
-            </div>
-          ) : null}
+        <ReportChartCard title="Attendance" description="Attended and absent students.">
+          <PieChart>
+            <Pie data={attendanceRows} dataKey="value" nameKey="name" innerRadius={64} outerRadius={96} paddingAngle={4}>
+              {attendanceRows.map((entry) => (
+                <Cell key={entry.name} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ReportChartCard>
 
-          {selectedRow ? <MarksTable row={selectedRow} /> : null}
-        </CardContent>
-      </Card>
+        <ReportChartCard title="Borderline Students" description="Students within borderline marks.">
+          <BarChart data={[{ name: selectedRow?.subjectName ?? "Subject", value: selectedRow?.borderlineStudents.length ?? 0 }]}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="name" />
+            <YAxis allowDecimals={false} />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="value" name="Borderline" fill="hsl(var(--secondary))" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ReportChartCard>
+      </div>
+
+      {selectedRow ? (
+        <div className="space-y-4">
+          <DetailPanel title="Failed Students">
+            <StudentList students={selectedRow.failedStudents} emptyText="No failed students." showSubject={false} />
+          </DetailPanel>
+          <DetailPanel title="Absent Students">
+            <StudentList students={selectedRow.absentStudents} emptyText="No absent students." showSubject={false} />
+          </DetailPanel>
+          <DetailPanel title="Borderline Students">
+            <StudentList students={selectedRow.borderlineStudents} emptyText="No borderline students." showSubject={false} />
+          </DetailPanel>
+        </div>
+      ) : null}
+
+      {selectedRow ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Student Marks Table</CardTitle>
+            <CardDescription>Uploaded marks and calculated result for the selected subject.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MarksTable row={selectedRow} />
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }
 
 function countFor(items: { label: string; count: number }[], label: string) {
   return items.find((item) => item.label === label)?.count ?? 0;
+}
+
+function ReportChartCard({ title, description, children }: { title: string; description: string; children: React.ReactElement }) {
+  return (
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            {children}
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function SubjectSummaryTable({
@@ -542,6 +679,7 @@ function buildSubjectRows(
     const configuredSubject = settings.subjects.find((item) => item.code.toUpperCase() === subject.subjectCode.toUpperCase());
     const assignment = settings.facultyAssignments.find((item) => item.subjectCode.toUpperCase() === subject.subjectCode.toUpperCase());
     const upload = uploadStatus.uploads.find((item) => item.subjectCode.toUpperCase() === subject.subjectCode.toUpperCase());
+    const subjectName = configuredSubject?.name || upload?.subjectName || subject.subjectCode;
     const students = analysis.students.map((student) => {
       const result = student.subjects[subject.subjectCode];
       return {
@@ -557,7 +695,8 @@ function buildSubjectRows(
 
     return {
       faculty: assignment?.facultyName || upload?.facultyName || "Unassigned",
-      subject: subjectLabel(subject.subjectCode, configuredSubject?.name || upload?.subjectName || subject.subjectCode),
+      subject: subjectLabel(subject.subjectCode, subjectName),
+      subjectName,
       subjectCode: subject.subjectCode,
       strength: subject.classStrength,
       attended: subject.studentsAttended,
@@ -566,6 +705,7 @@ function buildSubjectRows(
       failed: subject.studentsFailed,
       passPercentage: subject.passPercentage,
       failPercentage: subject.failPercentage,
+      averageMarks: subject.averageMarks ?? 0,
       failedStudents: students.filter((student) => student.result === "fail"),
       absentStudents: students.filter((student) => student.result === "absent"),
       borderlineStudents: students.filter((student) => student.isBorderline),
@@ -606,9 +746,19 @@ function formatValue(value: number | string | null | undefined) {
   return String(value);
 }
 
+function filterUploadStatus(status: UploadStatusResponse, config: AppConfigResponse): UploadStatusResponse {
+  const configuredCodes = new Set(config.subjects.map((subject) => subject.code.toUpperCase()));
+  return {
+    uploads: status.uploads.filter((upload) => configuredCodes.has(upload.subjectCode.toUpperCase())),
+    mergedStudentCount: config.subjects.length ? status.mergedStudentCount : 0,
+    warnings: status.warnings,
+  };
+}
+
 type SubjectReportRow = {
   faculty: string;
   subject: string;
+  subjectName: string;
   subjectCode: string;
   strength: number;
   attended: number;
@@ -617,6 +767,7 @@ type SubjectReportRow = {
   failed: number;
   passPercentage: number;
   failPercentage: number;
+  averageMarks: number;
   failedStudents: StudentReportItem[];
   absentStudents: StudentReportItem[];
   borderlineStudents: StudentReportItem[];

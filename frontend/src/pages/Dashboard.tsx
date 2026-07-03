@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Percent, UploadCloud } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ContextFilters } from "../components/filters/ContextFilters";
 import { PageLayout } from "../components/layout/PageLayout";
 import { StatCard } from "../components/StatCard";
@@ -23,13 +23,33 @@ export function Dashboard() {
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setConfig({ ...context, subjects: [], facultyAssignments: [] });
+    setUploadStatus({ uploads: [], mergedStudentCount: 0, warnings: [] });
+    setAnalysis(null);
 
     async function loadDashboard() {
       try {
-        const [nextConfig, nextUploadStatus] = await Promise.all([fetchContextConfig(context), fetchUploadStatus(context)]);
+        const nextConfig = await fetchContextConfig(context);
         if (!active) return;
         setConfig(nextConfig);
+
+        if (!nextConfig.subjects.length) {
+          setUploadStatus({ uploads: [], mergedStudentCount: 0, warnings: [] });
+          setAnalysis(null);
+          setMessage("No subjects configured.");
+          return;
+        }
+
+        const nextUploadStatus = filterUploadStatus(await fetchUploadStatus(context), nextConfig);
+        if (!active) return;
         setUploadStatus(nextUploadStatus);
+
+        if (!nextConfig.facultyAssignments.length) {
+          setAnalysis(null);
+          setMessage("No faculty assignments configured for this section.");
+          return;
+        }
+
         try {
           const nextAnalysis = await fetchAnalysis(context);
           if (!active) return;
@@ -57,6 +77,8 @@ export function Dashboard() {
   }, [context]);
 
   const uploadedCount = uploadStatus.uploads.length;
+  const hasSubjects = config.subjects.length > 0;
+  const hasAnalysisRows = Boolean(analysis && analysis.subjects.length);
   const uploadBySubject = new Map(uploadStatus.uploads.map((upload) => [upload.subjectCode.toUpperCase(), upload]));
   const uploadProgress = config.subjects.length ? Math.round((uploadedCount / config.subjects.length) * 100) : 0;
   const uploadData = [
@@ -73,9 +95,15 @@ export function Dashboard() {
   })) ?? [];
   const allPassCount = analysis?.failureDistribution.find((item) => item.label === "All Pass")?.count ?? 0;
   const failedStudentCount = Math.max((analysis?.overall.classStrength ?? 0) - allPassCount, 0);
+  const passFailData = [
+    { name: "Passed", value: allPassCount, color: "hsl(var(--accent))" },
+    { name: "Failed", value: failedStudentCount, color: "hsl(var(--destructive))" },
+  ];
   const riskStudents =
     analysis?.students
-      .filter((student) => student.failedSubjectCount > 0 || student.absentSubjectCount > 0)
+      .map((student) => ({ ...student, risk: studentRisk(student) }))
+      .filter((student) => student.risk.priority > 0)
+      .sort((a, b) => b.risk.priority - a.risk.priority || b.failedSubjectCount - a.failedSubjectCount || b.absentSubjectCount - a.absentSubjectCount)
       .slice(0, 8) ?? [];
 
   return (
@@ -89,7 +117,7 @@ export function Dashboard() {
         <StatCard label="Overall Pass %" value={`${analysis?.overall.passPercentage ?? 0}%`} hint="Across uploaded subject entries" icon={Percent} />
         <StatCard label="Students Passed" value={String(allPassCount)} hint="No subject failures" icon={CheckCircle2} />
         <StatCard label="Students Failed" value={String(failedStudentCount)} hint="One or more failures" icon={AlertTriangle} />
-        <StatCard label="Upload Progress" value={`${uploadProgress}%`} hint={`${uploadedCount} of ${config.subjects.length} subjects`} icon={UploadCloud} />
+        <StatCard label="Upload Progress" value={`${uploadProgress}%`} hint={`${uploadedCount} of ${config.subjects.length} Subjects`} icon={UploadCloud} />
       </div>
 
       <Card>
@@ -97,7 +125,7 @@ export function Dashboard() {
       </Card>
 
       {!analysis && !loading ? (
-        <Card>
+        <Card className="h-full">
           <CardContent className="p-8 text-center text-sm text-muted-foreground">
             No analysis data is available for this selection. Upload subject files for the selected exam to populate the dashboard.
           </CardContent>
@@ -111,6 +139,7 @@ export function Dashboard() {
             <CardDescription>Average marks from uploaded and merged subject files.</CardDescription>
           </CardHeader>
           <CardContent>
+            {hasAnalysisRows ? (
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={subjectChartData}>
@@ -118,19 +147,24 @@ export function Dashboard() {
                   <XAxis dataKey="subject" />
                   <YAxis />
                   <Tooltip />
+                  <Legend />
                   <Bar dataKey="average" name="Average marks" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            ) : (
+              <EmptyState>{hasSubjects ? "No subject analysis available." : "No subject configuration found."}</EmptyState>
+            )}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="h-full">
           <CardHeader>
             <CardTitle>Upload Progress</CardTitle>
             <CardDescription>Configured subjects compared with uploaded files.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
+            {hasSubjects ? (
             <div className="h-52">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -140,9 +174,13 @@ export function Dashboard() {
                     ))}
                   </Pie>
                   <Tooltip />
+                  <Legend />
                 </PieChart>
               </ResponsiveContainer>
             </div>
+            ) : (
+              <EmptyState>No subjects configured.</EmptyState>
+            )}
             <Progress value={uploadProgress} />
             <p className="text-sm text-muted-foreground">{uploadProgress}% of subject files uploaded.</p>
           </CardContent>
@@ -155,6 +193,7 @@ export function Dashboard() {
           <CardDescription>Configured subjects and their current upload status.</CardDescription>
         </CardHeader>
         <CardContent>
+          {!hasSubjects ? <EmptyState>No subjects configured.</EmptyState> : null}
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {config.subjects.map((subject) => {
               const upload = uploadBySubject.get(subject.code.toUpperCase());
@@ -184,14 +223,16 @@ export function Dashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
-        <Card>
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.75fr)]">
+        <Card className="h-full">
           <CardHeader>
             <CardTitle>Subject Analysis</CardTitle>
             <CardDescription>Reusable metrics generated from merged upload data.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
+          <CardContent className="h-[25rem]">
+            {!hasAnalysisRows ? <EmptyState>{hasSubjects ? "No data available." : "No subject configuration found."}</EmptyState> : null}
+            {hasAnalysisRows ? (
+            <div className="h-full overflow-auto pr-1">
               <table className="w-full min-w-[920px] text-left text-sm">
                 <thead className="border-b text-xs uppercase text-muted-foreground">
                   <tr>
@@ -232,31 +273,59 @@ export function Dashboard() {
                 </tbody>
               </table>
             </div>
+            ) : null}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="h-full">
           <CardHeader>
             <CardTitle>Failure Distribution</CardTitle>
             <CardDescription>Students grouped by number of failed subjects.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="h-80">
+          <CardContent className="flex h-[25rem] items-center">
+            {hasAnalysisRows ? (
+            <div className="h-80 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={analysis?.failureDistribution ?? []} layout="vertical" margin={{ left: 32 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" allowDecimals={false} />
                   <YAxis dataKey="label" type="category" width={120} />
                   <Tooltip />
+                  <Legend />
                   <Bar dataKey="count" name="Students" fill="hsl(var(--accent))" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            ) : (
+              <EmptyState>No data available.</EmptyState>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      <Card>
+      {hasAnalysisRows ? <Card>
+        <CardHeader>
+          <CardTitle>Pass vs Fail</CardTitle>
+          <CardDescription>Students with all subjects passed compared with students needing improvement.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={passFailData} dataKey="value" nameKey="name" innerRadius={70} outerRadius={104} paddingAngle={4}>
+                  {passFailData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card> : null}
+
+      {hasAnalysisRows ? <Card>
         <CardHeader>
           <CardTitle>Students Needing Attention</CardTitle>
           <CardDescription>Students with at least one failed or absent subject.</CardDescription>
@@ -280,14 +349,14 @@ export function Dashboard() {
                     <td className="py-3 pr-4">{student.studentName}</td>
                     <td className="py-3 pr-4">{student.failedSubjectCount}</td>
                     <td className="py-3 pr-4">{student.absentSubjectCount}</td>
-                    <td className="py-3">{student.failedSubjectCount >= 2 ? "High" : "Monitor"}</td>
+                    <td className="py-3">{student.risk.label}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </CardContent>
-      </Card>
+      </Card> : null}
     </PageLayout>
   );
 }
@@ -295,4 +364,27 @@ export function Dashboard() {
 function formatValue(value: number | null | undefined) {
   if (value === null || value === undefined) return "-";
   return String(value);
+}
+
+function filterUploadStatus(status: UploadStatusResponse, config: AppConfigResponse): UploadStatusResponse {
+  const configuredCodes = new Set(config.subjects.map((subject) => subject.code.toUpperCase()));
+  return {
+    uploads: status.uploads.filter((upload) => configuredCodes.has(upload.subjectCode.toUpperCase())),
+    mergedStudentCount: config.subjects.length ? status.mergedStudentCount : 0,
+    warnings: status.warnings,
+  };
+}
+
+function EmptyState({ children }: { children: ReactNode }) {
+  return <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">{children}</div>;
+}
+
+function studentRisk(student: AnalysisResponse["students"][number]) {
+  const hasBorderline = Object.values(student.subjects).some((subject) => subject.isBorderline);
+  if (student.failedSubjectCount >= 3) return { label: "High Risk", priority: 5 };
+  if (student.failedSubjectCount >= 2) return { label: "Multiple Failures", priority: 4 };
+  if (hasBorderline) return { label: "Borderline", priority: 3 };
+  if (student.absentSubjectCount > 0) return { label: "Absent", priority: 2 };
+  if (student.failedSubjectCount > 0) return { label: "Low Risk", priority: 1 };
+  return { label: "Clear", priority: 0 };
 }

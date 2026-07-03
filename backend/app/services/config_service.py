@@ -31,15 +31,22 @@ def get_context_config(academic_year: str, year: str, semester: str, section: st
     subjects_path = context_dir / "subjects.json"
     section_path = context_dir / f"section_{section.upper()}.json"
 
-    if not subjects_path.exists():
-        _write_json(subjects_path, {"subjects": DEFAULT_SUBJECTS})
-    if not section_path.exists():
-        _write_json(section_path, {"facultyAssignments": DEFAULT_FACULTY})
-
-    subjects = [_normalize_subject(subject) for subject in _read_json(subjects_path).get("subjects", [])]
-    faculty_assignments = [_normalize_faculty(assignment) for assignment in _read_json(section_path).get("facultyAssignments", [])]
-    _write_json(subjects_path, {"subjects": subjects})
-    _write_json(section_path, {"facultyAssignments": faculty_assignments})
+    subjects = [_normalize_subject(subject) for subject in _read_json(subjects_path).get("subjects", [])] if subjects_path.exists() else []
+    configured_codes = {subject.get("code", "").strip().upper() for subject in subjects}
+    faculty_assignments = (
+        [_normalize_faculty(assignment) for assignment in _read_json(section_path).get("facultyAssignments", [])]
+        if section_path.exists()
+        else []
+    )
+    faculty_assignments = [
+        assignment
+        for assignment in faculty_assignments
+        if assignment.get("subjectCode", "").strip().upper() in configured_codes
+    ]
+    if subjects_path.exists():
+        _write_json(subjects_path, {"subjects": subjects})
+    if section_path.exists():
+        _write_json(section_path, {"facultyAssignments": faculty_assignments})
     return {
         "academicYear": academic_year,
         "year": year,

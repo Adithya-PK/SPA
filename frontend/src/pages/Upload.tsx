@@ -22,11 +22,21 @@ export function Upload() {
   useEffect(() => {
     let active = true;
     setLoadingStatus(true);
-    Promise.all([fetchContextConfig(context), fetchUploadStatus(context)])
-      .then(([nextConfig, nextStatus]) => {
+    setConfig({ ...context, subjects: [], facultyAssignments: [] });
+    setStatus({ uploads: [], mergedStudentCount: 0, warnings: [] });
+    setMessage(null);
+
+    fetchContextConfig(context)
+      .then(async (nextConfig) => {
         if (!active) return;
         setConfig(nextConfig);
-        setStatus(nextStatus);
+        if (!nextConfig.subjects.length) {
+          setStatus({ uploads: [], mergedStudentCount: 0, warnings: [] });
+          return;
+        }
+        const nextStatus = await fetchUploadStatus(context);
+        if (!active) return;
+        setStatus(filterUploadStatus(nextStatus, nextConfig));
       })
       .catch((error) => {
         if (active) setMessage(error.message);
@@ -91,7 +101,7 @@ export function Upload() {
         <CardHeader>
           <CardTitle>Subject Upload Progress</CardTitle>
           <CardDescription>
-            {uploadedCount} of {subjects.length} subjects uploaded. {status.mergedStudentCount} students merged.
+            {uploadedCount} of {subjects.length} Subjects uploaded. {subjects.length ? status.mergedStudentCount : 0} students merged.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -120,6 +130,13 @@ export function Upload() {
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {!subjects.length ? (
+          <Card className="md:col-span-2 xl:col-span-3">
+            <CardContent className="p-8 text-center text-sm text-muted-foreground">
+              No subjects configured for the selected semester.
+            </CardContent>
+          </Card>
+        ) : null}
         {subjects.map((subject) => (
           <Card key={subject.code}>
             <CardHeader>
@@ -175,4 +192,13 @@ export function Upload() {
       </div>
     </PageLayout>
   );
+}
+
+function filterUploadStatus(status: UploadStatusResponse, config: AppConfigResponse): UploadStatusResponse {
+  const configuredCodes = new Set(config.subjects.map((subject) => subject.code.toUpperCase()));
+  return {
+    uploads: status.uploads.filter((upload) => configuredCodes.has(upload.subjectCode.toUpperCase())),
+    mergedStudentCount: config.subjects.length ? status.mergedStudentCount : 0,
+    warnings: status.warnings,
+  };
 }
